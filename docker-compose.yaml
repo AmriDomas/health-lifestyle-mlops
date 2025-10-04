@@ -1,0 +1,110 @@
+# docker-compose.yml
+#version: '3.10'
+
+# Define networks first
+networks:
+  ml-network:
+    driver: bridge
+
+# Define volumes
+volumes:
+  model-storage:
+  mlruns-storage:
+  reports-storage:
+
+services:
+  ml-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dockerfile
+    container_name: health-ml-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+      - ./mlruns:/app/mlruns
+      - ./reports:/app/reports
+      - ./data:/app/data
+    environment:
+      - ENVIRONMENT=development
+      - MLFLOW_TRACKING_URI=./mlruns
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - ml-network
+
+  ml-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit.dockerfile
+    container_name: health-ml-frontend
+    #network_mode: host
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models
+      - ./mlruns:/app/mlruns
+      - ./reports:/app/reports
+      - ./data:/app/data
+    environment:
+      - BACKEND_URL=http://ml-backend:8000  # ✅ Ini harus ada
+      - ENVIRONMENT=development
+    depends_on:
+      ml-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - ml-network
+
+  mlflow-ui:
+    image: python:3.10-slim
+    container_name: health-mlflow-ui
+    ports:
+      - "5000:5000"
+    working_dir: /app
+    command: >
+      sh -c "pip install mlflow && 
+             mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri file:/app/mlruns"
+    volumes:
+      - ./mlruns:/app/mlruns
+    depends_on:
+      - ml-backend
+    networks:
+      - ml-network
+
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit.dockerfile
+    container_name: health-ml-monitoring
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./models:/app/models
+      - ./mlruns:/app/mlruns
+      - ./reports:/app/reports
+      - ./data:/app/data
+    environment:
+      - ENVIRONMENT=development
+      - BACKEND_URL=http://ml-backend:8000
+    depends_on:
+      ml-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - ml-network

@@ -1,0 +1,109 @@
+# docker-compose.prod.yml
+version: '3.10'
+
+# Define networks first
+networks:
+  ml-network-prod:
+    driver: bridge
+
+# Define volumes
+volumes:
+  model-storage:
+    driver: local
+  mlruns-storage:
+    driver: local
+  reports-storage:
+    driver: local
+
+services:
+  ml-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dockerfile
+    container_name: health-ml-backend-prod
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-storage:/app/models
+      - mlruns-storage:/app/mlruns
+      - reports-storage:/app/reports
+    environment:
+      - ENVIRONMENT=production
+      - MLFLOW_TRACKING_URI=./mlruns
+      - PYTHONPATH=/app
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ml-network-prod
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+
+  ml-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit.dockerfile
+    container_name: health-ml-frontend-prod
+    ports:
+      - "8501:8501"
+    volumes:
+      - model-storage:/app/models
+    environment:
+      - BACKEND_URL=http://ml-backend:8000
+      - ENVIRONMENT=production
+    depends_on:
+      - ml-backend
+    restart: unless-stopped
+    networks:
+      - ml-network-prod
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  mlflow-ui:
+    image: python:3.10-slim
+    container_name: health-mlflow-ui-prod
+    ports:
+      - "5000:5000"
+    working_dir: /app
+    command: >
+      sh -c "pip install mlflow && 
+             mlflow ui --host 0.0.0.0 --port 5000 --backend-store-uri file:/app/mlruns"
+    volumes:
+      - mlruns-storage:/app/mlruns
+    restart: unless-stopped
+    networks:
+      - ml-network-prod
+
+  monitoring:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit.dockerfile
+    container_name: health-ml-monitoring-prod
+    ports:
+      - "8502:8501"
+    volumes:
+      - model-storage:/app/models
+      - mlruns-storage:/app/mlruns
+      - reports-storage:/app/reports
+    environment:
+      - ENVIRONMENT=production
+      - BACKEND_URL=http://ml-backend:8000
+    depends_on:
+      - ml-backend
+    restart: unless-stopped
+    networks:
+      - ml-network-prod
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
