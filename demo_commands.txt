@@ -1,0 +1,74 @@
+# 🎬 MLOPs LIVE DEMO COMMANDS SEQUENCE
+# Save this as demo_commands.txt
+
+=== PART 1: PROJECT OVERVIEW ===
+dir
+tree /F
+
+=== PART 2: DOCKER DEPLOYMENT ===
+docker-compose up -d
+docker ps
+docker-compose logs --tail=10
+
+=== PART 3: SERVICE HEALTH CHECK ===
+curl http://localhost:8000/health
+curl -I http://localhost:8501
+curl -I http://localhost:5000
+curl -I http://localhost:9090
+curl -I http://localhost:3000
+
+=== PART 4: INITIAL MONITORING STATE ===
+curl http://localhost:9090/api/v1/targets
+curl http://localhost:8000/metrics | findstr "ml_predictions_total"
+
+=== PART 5: GENERATE PREDICTIONS ===
+:: Single prediction
+curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d "@test_data.json"
+
+:: Multiple predictions loop
+for /L %i in (1,1,3) do (curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d "@test_data.json" & timeout /t 2 /nobreak > nul)
+
+=== PART 6: LIVE METRICS MONITORING ===
+:: Check predictions count
+curl http://localhost:9090/api/v1/query?query=ml_predictions_total
+
+:: Check prediction rate
+curl http://localhost:9090/api/v1/query?query=rate(ml_predictions_total[5m])
+
+:: Check all ML metrics
+curl http://localhost:8000/metrics | findstr "ml_"
+
+=== PART 7: PERFORMANCE TESTING ===
+:: Concurrent requests (run in PowerShell)
+powershell -Command "1..5 | ForEach-Object { Start-Job -ScriptBlock { Invoke-RestMethod -Uri 'http://localhost:8000/predict' -Method POST -Headers @{'Content-Type'='application/json'} -Body (Get-Content 'test_data.json' -Raw) } }"
+
+=== PART 8: ERROR HANDLING DEMO ===
+:: Invalid request
+curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d "{\"invalid\": \"data\"}"
+
+:: Check error metrics
+curl http://localhost:9090/api/v1/query?query=ml_prediction_errors_total
+
+=== PART 9: GRAFANA DASHBOARD SETUP ===
+:: Manual steps:
+1. Open http://localhost:3000 (admin/admin)
+2. Add Prometheus data source: http://localhost:9090
+3. Create dashboard with:
+   - Panel 1: ml_predictions_total (Stat)
+   - Panel 2: rate(ml_predictions_total[5m]) (Time series)
+   - Panel 3: up{job="health-ml-api"} (Stat)
+
+=== PART 10: REAL-TIME DEMO ===
+:: Live monitoring command (run in PowerShell)
+powershell -Command "while(1) { cls; Write-Host '=== LIVE ML METRICS ==='; $p = (Invoke-RestMethod 'http://localhost:9090/api/v1/query?query=ml_predictions_total').data.result[0].value[1]; $r = (Invoke-RestMethod 'http://localhost:9090/api/v1/query?query=rate(ml_predictions_total[5m])').data.result[0].value[1]; Write-Host "Predictions: $p"; Write-Host "Rate: $r"; Start-Sleep 2 }"
+
+=== PART 11: CLEANUP ===
+docker-compose down
+docker system prune -f
+
+=== QUICK DEMO (3-MINUTE VERSION) ===
+docker-compose up -d
+timeout /t 10
+curl http://localhost:8000/health
+for /L %i in (1,1,5) do (curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d "@test_data.json" & timeout /t 1 /nobreak > nul)
+curl http://localhost:9090/api/v1/query?query=ml_predictions_total
