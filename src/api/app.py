@@ -1,6 +1,7 @@
 # src/api/app.py
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
@@ -11,7 +12,11 @@ import logging
 import shap
 from datetime import datetime
 import json
+import time
 from contextlib import asynccontextmanager  # ✅ Import this
+from prometheus_fastapi_instrumentator import Instrumentator
+from src.monitoring.prometheus_metrics import prometheus_metrics
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -140,6 +145,9 @@ app = FastAPI(
     lifespan=lifespan  # Use lifespan instead of deprecated on_event
 )
 
+instrumentator = Instrumentator().instrument(app)
+instrumentator.expose(app, endpoint="/metrics")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -182,6 +190,7 @@ class MonitoringResponse(BaseModel):
     drift_detected: Optional[bool] = None
     alerts: Optional[List[Dict]] = None
     report_timestamp: str
+
 
 # ✅ ROUTES - Setelah app initialization
 @app.get("/")
@@ -258,6 +267,8 @@ def log_prediction_for_monitoring(input_data: Dict, prediction_result: Dict):
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(data: HealthData, background_tasks: BackgroundTasks = None):
+    start_time = time.time()
+    
     try:
         logger.info(f"Received prediction request: {data.dict()}")
         
@@ -273,13 +284,13 @@ async def predict(data: HealthData, background_tasks: BackgroundTasks = None):
         processed_data = feature_pipeline.transform(input_data)
         logger.info(f"Processed data shape: {processed_data.shape}")
         
-        # Predictions
+        # Predictions untuk semua models
         disease_pred = clf_model.predict(processed_data)[0]
         cholesterol_pred = reg_model.predict(processed_data)[0]
         cluster_pred = cluster_model.predict(processed_data)[0]
         
         logger.info(f"Predictions - Disease: {disease_pred}, Cholesterol: {cholesterol_pred:.2f}, Cluster: {cluster_pred}")
-        
+
         # Confidence untuk classification
         confidence = None
         if hasattr(clf_model, "predict_proba"):
@@ -339,10 +350,52 @@ async def predict(data: HealthData, background_tasks: BackgroundTasks = None):
         if background_tasks:
             background_tasks.add_task(log_prediction_for_monitoring, data.dict(), response_data)
         
+        # ✅ PROMETHEUS METRICS - RECORD SEMUA MODELS
+        duration = time.time() - start_time
+        
+        # Record metrics untuk Disease Risk Model
+        prometheus_metrics.record_prediction(
+            model_type="disease_risk", 
+            duration=duration, 
+            confidence=confidence
+        )
+        
+        # Record metrics untuk Cholesterol Model
+        prometheus_metrics.record_prediction(
+            model_type="cholesterol",
+            duration=duration,
+            confidence=None  # Regression tidak ada confidence
+        )
+        
+        # Record metrics untuk Clustering Model  
+        prometheus_metrics.record_prediction(
+            model_type="lifestyle_clustering",
+            duration=duration, 
+            confidence=None  # Clustering tidak ada confidence
+        )
+        
+        # Update feature importance metrics
+        if feature_importance:
+            prometheus_metrics.update_feature_impact(feature_importance)
+        
         logger.info("Prediction completed successfully")
         return PredictionResponse(**response_data)
         
     except Exception as e:
+        # ✅ RECORD ERRORS UNTUK SEMUA MODELS
+        prometheus_metrics.record_prediction_error(
+            model_type="disease_risk", 
+            error_type=type(e).__name__
+        )
+        prometheus_metrics.record_prediction_error(
+            model_type="cholesterol",
+            error_type=type(e).__name__
+        )
+        prometheus_metrics.record_prediction_error(
+            model_type="lifestyle_clustering", 
+            error_type=type(e).__name__
+        )
+        
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -391,14 +444,39 @@ async def trigger_retraining():
 
 @app.get("/health")
 async def health_check():
+    # Definisikan variables yang diperlukan
     models_loaded = all([
         clf_model is not None,
-        reg_model is not None,
+        reg_model is not None, 
         cluster_model is not None,
         feature_pipeline is not None
     ])
     
     monitoring_loaded = performance_monitor is not None and drift_detector is not None
+    
+    # Update active predictions gauge
+    prometheus_metrics.active_predictions.set(len(prediction_history))
+    
+    # Update model performance metrics dari baseline
+    if performance_monitor and hasattr(performance_monitor.baseline_metrics, 'accuracy'):
+        prometheus_metrics.update_model_performance(
+            model_type="disease_risk",
+            accuracy=performance_monitor.baseline_metrics.accuracy,
+            f1_score=getattr(performance_monitor.baseline_metrics, 'f1_score', 0.81)
+        )
+    
+    # Update regression metrics (contoh values)
+    prometheus_metrics.update_model_performance(
+        model_type="cholesterol",
+        mse=325.0,  # Contoh dari baseline
+        mae=14.2    # Contoh dari baseline
+    )
+    
+    # Update clustering metrics (contoh values)  
+    prometheus_metrics.update_model_performance(
+        model_type="lifestyle_clustering", 
+        silhouette=0.65  # Contoh silhouette score
+    )
     
     return {
         "status": "healthy" if models_loaded else "degraded",

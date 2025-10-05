@@ -1,0 +1,94 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "ML Model Monitoring - Multi Model",
+    "tags": ["mlops", "monitoring", "multi-model"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Prediction Rate by Model",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(ml_predictions_total{status=\"success\"}[5m])",
+            "legendFormat": "{{model_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Prediction Duration by Model",
+        "type": "heatmap", 
+        "targets": [
+          {
+            "expr": "ml_prediction_duration_seconds_bucket",
+            "legendFormat": "{{model_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Model Performance",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "ml_model_accuracy",
+            "legendFormat": "{{model_type}} Accuracy"
+          },
+          {
+            "expr": "ml_clustering_silhouette", 
+            "legendFormat": "{{model_type}} Silhouette"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Regression Performance",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "ml_regression_mse",
+            "legendFormat": "{{model_type}} MSE"
+          },
+          {
+            "expr": "ml_regression_mae",
+            "legendFormat": "{{model_type}} MAE" 
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Feature Importance - Disease Risk",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "ml_feature_impact{model_type=\"disease_risk\"}",
+            "legendFormat": "{{feature_name}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 16, "x": 0, "y": 16}
+      },
+      {
+        "id": 6, 
+        "title": "Prediction Errors by Model",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "ml_prediction_errors_total",
+            "legendFormat": "{{model_type}} - {{error_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}

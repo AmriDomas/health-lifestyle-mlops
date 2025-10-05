@@ -1,0 +1,15 @@
+{
+  "age": 35,
+  "gender": "Male",
+  "bmi": 25.5,
+  "daily_steps": 8000,
+  "sleep_hours": 7.5,
+  "water_intake_l": 2.5,
+  "calories_consumed": 2200,
+  "smoker": 0,
+  "alcohol": 1,
+  "resting_hr": 65,
+  "systolic_bp": 120,
+  "diastolic_bp": 80,
+  "family_history": 0
+}

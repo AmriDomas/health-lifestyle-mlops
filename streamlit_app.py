@@ -58,20 +58,23 @@ try:
     if health_response.status_code == 200:
         health_data = health_response.json()
         st.sidebar.success("✅ Backend connected")
-        st.sidebar.write(f"Models: {'✅ Loaded' if health_data.get('models_loaded') else '❌ Not Loaded'}")
-
-        # FIX: gunakan key yang sesuai
-        monitoring_flag = health_data.get('monitoring_loaded') or health_data.get('monitoring_available')
-        st.sidebar.write(f"Monitoring: {'✅ Available' if monitoring_flag else '⚠️ Limited'}")
-
-        # Tambahan: tampilkan status & jumlah prediksi
-        st.sidebar.write(f"Status: {health_data.get('status')}")
-        st.sidebar.write(f"Total Predictions: {health_data.get('total_predictions')}")
+        
+        # FIX: Gunakan key yang konsisten
+        models_loaded = health_data.get('models_loaded', False)
+        monitoring_loaded = health_data.get('monitoring_loaded', False)
+        
+        st.sidebar.write(f"Models: {'✅ Loaded' if models_loaded else '❌ Not Loaded'}")
+        st.sidebar.write(f"Monitoring: {'✅ Available' if monitoring_loaded else '⚠️ Limited'}")
+        st.sidebar.write(f"Status: {health_data.get('status', 'unknown')}")
+        st.sidebar.write(f"Total Predictions: {health_data.get('total_predictions', 0)}")
     else:
         st.sidebar.error(f"❌ Backend error: {health_response.status_code}")
-except Exception as e:
+        st.sidebar.info("💡 Run: `docker-compose up ml-backend`")
+except requests.exceptions.ConnectionError:
     st.sidebar.error(f"❌ Cannot connect to backend at {BACKEND_URL}")
-    st.sidebar.info("Make sure the FastAPI server is running on port 8000")
+    st.sidebar.info("💡 Make sure the FastAPI server is running")
+except Exception as e:
+    st.sidebar.error(f"❌ Connection error: {str(e)}")
 
 if st.sidebar.button("Predict"):
     try:
@@ -250,14 +253,12 @@ try:
     
     if target_experiment:
         st.subheader(f"Experiment: {target_experiment.name}")
-        
-        # Search runs dari experiment
         runs = mlflow.search_runs(
             experiment_ids=[target_experiment.experiment_id],
             max_results=20,
             order_by=["start_time DESC"]
         )
-        
+    
         if not runs.empty:
             # Tampilkan tabs untuk masing-masing model type
             tab1, tab2, tab3 = st.tabs(["Disease Risk Model", "Cholesterol Model", "Clustering Model"])

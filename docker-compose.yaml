@@ -1,16 +1,16 @@
 # docker-compose.yml
-#version: '3.10'
+version: '3.10'
 
-# Define networks first
 networks:
   ml-network:
     driver: bridge
 
-# Define volumes
 volumes:
   model-storage:
   mlruns-storage:
   reports-storage:
+  grafana_data:
+  prometheus_data:
 
 services:
   ml-backend:
@@ -34,16 +34,44 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 40s
+      start_period: 60s   # tambahin waktu tunggu startup
     networks:
       - ml-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: health-ml-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yaml
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway" 
+    networks:
+      - ml-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: health-ml-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - ml-network
+    depends_on:
+      - prometheus
 
   ml-frontend:
     build:
       context: .
       dockerfile: Dockerfile.streamlit.dockerfile
     container_name: health-ml-frontend
-    #network_mode: host
     ports:
       - "8501:8501"
     volumes:
@@ -52,7 +80,7 @@ services:
       - ./reports:/app/reports
       - ./data:/app/data
     environment:
-      - BACKEND_URL=http://ml-backend:8000  # ✅ Ini harus ada
+      - BACKEND_URL=http://ml-backend:8000
       - ENVIRONMENT=development
     depends_on:
       ml-backend:
